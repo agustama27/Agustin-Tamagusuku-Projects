@@ -1,0 +1,119 @@
+from typing import Tuple
+
+import numpy as np
+import pandas as pd
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, OrdinalEncoder
+
+
+def preprocess_data(
+    train_df: pd.DataFrame, val_df: pd.DataFrame, test_df: pd.DataFrame
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Pre processes data for modeling. Receives train, val and test dataframes
+    and returns numpy ndarrays of cleaned up dataframes with feature engineering
+    already performed.
+
+    Arguments:
+        train_df : pd.DataFrame
+        val_df : pd.DataFrame
+        test_df : pd.DataFrame
+
+    Returns:
+        train : np.ndarrary
+        val : np.ndarrary
+        test : np.ndarrary
+    """
+    # Print shape of input data
+    print("Input train data shape: ", train_df.shape)
+    print("Input val data shape: ", val_df.shape)
+    print("Input test data shape: ", test_df.shape, "\n")
+
+    # Make a copy of the dataframes
+    working_train_df = train_df.copy()
+    working_val_df = val_df.copy()
+    working_test_df = test_df.copy()
+
+    # 1. Correct outliers/anomalous values in numerical
+    # columns (`DAYS_EMPLOYED` column).
+    working_train_df["DAYS_EMPLOYED"].replace({365243: np.nan}, inplace=True)
+    working_val_df["DAYS_EMPLOYED"].replace({365243: np.nan}, inplace=True)
+    working_test_df["DAYS_EMPLOYED"].replace({365243: np.nan}, inplace=True)
+
+    # 2. TODO Encode string categorical features (dytpe `object`):
+    #     - If the feature has 2 categories encode using binary encoding,
+    #       please use `sklearn.preprocessing.OrdinalEncoder()`. Only 4 columns
+    #       from the dataset should have 2 categories.
+    #     - If it has more than 2 categories, use one-hot encoding, please use
+    #       `sklearn.preprocessing.OneHotEncoder()`. 12 columns
+    #       from the dataset should have more than 2 categories.
+    # Take into account that:
+    #   - You must apply this to the 3 DataFrames (working_train_df, working_val_df,
+    #     working_test_df).
+    #   - In order to prevent overfitting and avoid Data Leakage you must use only
+    #     working_train_df DataFrame to fit the OrdinalEncoder and
+    #     OneHotEncoder classes, then use the fitted models to transform all the
+    #     datasets.
+    binary_cat_feature = [
+        "NAME_CONTRACT_TYPE",
+        "FLAG_OWN_CAR",
+        "FLAG_OWN_REALTY",
+        "EMERGENCYSTATE_MODE",	
+    ]
+    od_encoder = OrdinalEncoder(
+        handle_unknown="use_encoded_value", unknown_value=np.nan
+    )
+    od_encoder.fit(working_train_df[binary_cat_feature])
+    input_df = [working_train_df, working_val_df, working_test_df]
+    transformed_df = []
+    for _df in input_df:
+        _df[binary_cat_feature] = od_encoder.transform(_df[binary_cat_feature])
+        transformed_df.append(_df)
+    working_train_df, working_val_df, working_test_df = transformed_df
+
+    # Categorical features with more than 2 values
+    nobinary_cat_feature = working_train_df.columns[
+        (working_train_df.dtypes == "object") & (working_train_df.nunique() > 2)
+    ]
+    oh_encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
+    oh_encoder.fit(working_train_df[nobinary_cat_feature])
+    input_df = [working_train_df, working_val_df, working_test_df]
+    transformed_df = []
+    for _df in input_df:
+        transformed = oh_encoder.transform(_df[nobinary_cat_feature])
+        oh_df = pd.DataFrame(transformed, columns=oh_encoder.get_feature_names_out())
+        final_df = pd.concat([_df.reset_index(drop=True), oh_df], axis=1).drop(
+            nobinary_cat_feature, axis=1
+        )
+        transformed_df.append(final_df)
+    working_train_df, working_val_df, working_test_df = transformed_df
+
+    # 3. TODO Impute values for all columns with missing data or, just all the columns.
+    # Use median as imputing value. Please use sklearn.impute.SimpleImputer().
+    # Again, take into account that:
+    #   - You must apply this to the 3 DataFrames (working_train_df, working_val_df,
+    #     working_test_df).
+    #   - In order to prevent overfitting and avoid Data Leakage you must use only
+    #     working_train_df DataFrame to fit the SimpleImputer and then use the fitted
+    #     model to transform all the datasets.
+    imputer = SimpleImputer(missing_values=np.nan, strategy="median")
+    imputer.fit(working_train_df)
+    train = imputer.transform(working_train_df)
+    val = imputer.transform(working_val_df)
+    test = imputer.transform(working_test_df)
+
+    # 4. TODO Feature scaling with Min-Max scaler. Apply this to all the columns.
+    # Please use sklearn.preprocessing.MinMaxScaler().
+    # Again, take into account that:
+    #   - You must apply this to the 3 DataFrames (working_train_df, working_val_df,
+    #     working_test_df).
+    #   - In order to prevent overfitting and avoid Data Leakage you must use only
+    #     working_train_df DataFrame to fit the MinMaxScaler and then use the fitted
+    #     model to transform all the datasets.
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaler.fit(train)
+    train = scaler.transform(train)
+    val = scaler.transform(val)
+    test = scaler.transform(test)
+
+    return train, val, test
